@@ -1,0 +1,24 @@
+Screen { background: $surface; }
+#nav { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
+.panel { border: round $primary-darken-1; padding: 0 1; }
+.panel:focus-within { border: round $accent; }
+.title { text-style: bold; color: $accent; }
+.muted { color: $text-muted; }
+Input:focus, Select:focus, DataTable:focus, Button:focus, Switch:focus, Checkbox:focus {
+    border: tall $accent;
+}
+DataTable:focus > .datatable--cursor { background: $accent 40%; text-style: bold; }
+Button { margin: 0 1 0 0; min-width: 12; }
+.form-row { height: 3; }
+.form-row Label { width: 26; padding: 1 1 0 0; color: $text-muted; }
+.form-row Input, .form-row Select { width: 1fr; }
+#cards { height: 5; }
+#charts { height: 1fr; min-height: 14; }
+#chart-top, #chart-bottom { height: 1fr; }
+#activity { height: 12; }
+#empty-state { height: auto; padding: 0 1; color: $text-muted; }
+#status-line { height: 1; padding: 0 1; }
+.messages { height: auto; max-height: 12; }
+ModalScreen { align: center middle; }
+.dialog { width: 64; max-width: 95%; height: auto; max-height: 90%; border: thick $accent; background: $panel; padding: 1 2; }
+.dialog-buttons { height: 3; margin-top: 1; align-horizontal: right; }

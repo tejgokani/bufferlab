@@ -1,0 +1,63 @@
+#!/bin/sh
+# BufferLab launcher (macOS / Linux / WSL / Git-Bash).
+# Every run: find Python >= 3.11, make sure <repo>/.venv exists and is current, then start BufferLab.
+# Works through symlinks, so `ln -s <repo>/bin/bufferlab ~/.local/bin/bufferlab` gives a global command.
+set -e
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  dir=$(cd "$(dirname "$SELF")" && pwd)
+  target=$(readlink "$SELF")
+  case "$target" in /*) SELF="$target" ;; *) SELF="$dir/$target" ;; esac
+done
+ROOT=$(cd "$(dirname "$SELF")/.." && pwd)
+VENV="$ROOT/.venv"
+STAMP="$VENV/.bufferlab-stamp"
+
+say() { printf 'bufferlab: %s\n' "$*" >&2; }
+
+find_python() {
+  for c in "${BUFFERLAB_PYTHON:-}" python3.13 python3.12 python3.11 python3 python; do
+    [ -n "$c" ] || continue
+    p=$(command -v "$c" 2>/dev/null) || continue
+    if "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      printf '%s' "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
+current_stamp() { cksum < "$ROOT/pyproject.toml" | cut -d' ' -f1,2; }
+
+venv_ok() {
+  [ -x "$VENV/bin/python" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$(current_stamp)" ] &&
+    "$VENV/bin/python" -c 'import bufferlab, textual, typer' 2>/dev/null
+}
+
+if ! venv_ok; then
+  PY=$(find_python) || {
+    say "Python 3.11 or newer was not found on this system."
+    say "Install it, then run this command again:"
+    say "  macOS:         brew install python@3.12     (or https://www.python.org/downloads/)"
+    say "  Debian/Ubuntu: sudo apt install python3 python3-venv python3-pip"
+    say "  Fedora:        sudo dnf install python3"
+    say "  Arch:          sudo pacman -S python"
+    exit 127
+  }
+  say "setting up environment in $VENV (using $PY) - first run only..."
+  rm -rf "$VENV"
+  "$PY" -m venv "$VENV" || {
+    say "could not create a virtual environment (on Debian/Ubuntu: sudo apt install python3-venv)."
+    exit 1
+  }
+  "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check -e "$ROOT" || {
+    say "dependency installation failed (is the network reachable?)."
+    rm -f "$STAMP"
+    exit 1
+  }
+  current_stamp > "$STAMP"
+  say "ready."
+fi
+
+exec "$VENV/bin/python" -m bufferlab "$@"
