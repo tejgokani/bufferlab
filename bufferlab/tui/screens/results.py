@@ -58,7 +58,7 @@ class ResultsScreen(LabScreen):
             self.load(want)
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if not self._loading and event.value is not Select.BLANK:
+        if not self._loading and isinstance(event.value, str):
             self.app.focus_run_id = event.value
             self.load(event.value)
 

@@ -219,3 +219,27 @@ async def test_command_palette_lists_every_screen(tmp_path):
         titles = {c.title for c in app.get_system_commands(app.screen)}
         for n in NAV:
             assert f"Go to {n.label}" in titles
+
+
+async def test_results_screen_ignores_empty_selection(tmp_path):
+    """Regression: an empty Select value (Select.NULL) once crashed the Results screen on first open."""
+    repo = Repository(tmp_path / "t.db")
+    from bufferlab.experiments.runner import run_experiment
+
+    repo.save_run(run_experiment(scenario_config("light-traffic", "red", duration_s=5.0, warmup_s=1.0)))
+    app = BufferLabApp(repo)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.press("f9")
+        await pilot.pause(0.3)
+        assert app.current_name() == "results"
+        app.focus_run_id = app.repo.list_runs()[0].run_id
+        for _ in range(2):  # second visit re-sets options on a Select that already has a value
+            await pilot.press("f2")
+            await pilot.pause(0.2)
+            await pilot.press("f9")
+            await pilot.pause(0.4)
+            assert app.current_name() == "results"
+        for key in ("f6", "f8", "f10", "f3", "ctrl+t"):
+            await pilot.press(key)
+            await pilot.pause(0.2)
+            assert app.current_name() != "dashboard"

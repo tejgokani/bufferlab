@@ -59,7 +59,7 @@ class SettingsScreen(LabScreen):
             self.app.refresh(layout=True)
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if not self._init and event.value is not Select.BLANK:
+        if not self._init and isinstance(event.value, str):
             self.app.settings["theme"] = event.value
             self.app.apply_theme()
             self.app.save_settings()

@@ -147,7 +147,7 @@ class ResearchScreen(LabScreen):
         self.query_one("#reps", Input).value = str(q["reps"])
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if event.select.id == "q" and event.value is not Select.BLANK:
+        if event.select.id == "q" and isinstance(event.value, str):
             self._apply_question(event.value)
 
     def on_input_changed(self, event: Input.Changed) -> None:

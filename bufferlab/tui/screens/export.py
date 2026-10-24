@@ -83,7 +83,7 @@ class ExportScreen(LabScreen):
     def update_path(self) -> None:
         what = self.query_one("#what", Select).value
         fmt = self.query_one("#fmt", Select).value
-        if what is Select.BLANK or fmt is Select.BLANK:
+        if not isinstance(what, str) or not isinstance(fmt, str):
             return
         stem = {
             "marked": "runs-marked",

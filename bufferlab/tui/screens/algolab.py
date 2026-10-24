@@ -105,7 +105,7 @@ class AlgorithmLabScreen(LabScreen):
         self.query_one("#explain", Static).update(t)
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if event.value is Select.BLANK:
+        if not isinstance(event.value, str):
             return
         if event.select.id == "alg":
             self.query_one("#params", ParamEditor).set_algorithm(event.value)

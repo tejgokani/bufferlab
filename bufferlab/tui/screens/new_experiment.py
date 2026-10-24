@@ -164,7 +164,7 @@ class NewExperimentScreen(LabScreen):
             algorithm=alg,
             traffic_model=traffic,
             algorithm_params=params,
-            scenario=None if sc in (CUSTOM, Select.BLANK) else sc,
+            scenario=sc if isinstance(sc, str) and sc != CUSTOM else None,
             **vals,
         ), []
 
@@ -207,7 +207,7 @@ class NewExperimentScreen(LabScreen):
             self.refresh_summary()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if getattr(self, "_loading", False) or event.value is Select.BLANK:
+        if getattr(self, "_loading", False) or not isinstance(event.value, str):
             return
         sid = event.select.id
         if sid == "sel-alg":
