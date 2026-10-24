@@ -143,3 +143,14 @@ def test_python_dash_m():
         [sys.executable, "-m", "bufferlab", "--version"], capture_output=True, text=True
     )
     assert out.returncode == 0 and __version__ in out.stdout
+
+
+def test_launcher_flag_survives_a_shadowing_bufferlab_directory(tmp_path):
+    """Running from a folder that contains a `bufferlab/` dir (e.g. the clone's parent, ~) must still work."""
+    import subprocess
+    import sys
+
+    (tmp_path / "bufferlab").mkdir()
+    out = subprocess.run([sys.executable, "-P", "-m", "bufferlab", "--version"], cwd=tmp_path,
+                         capture_output=True, text=True)
+    assert out.returncode == 0 and __version__ in out.stdout

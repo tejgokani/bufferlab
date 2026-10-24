@@ -33,5 +33,5 @@ if "%NEED%"=="1" (
   copy /y "%ROOT%\pyproject.toml" "%VENV%\pyproject.stamp" >nul
   >&2 echo bufferlab: ready.
 )
-"%VPY%" -m bufferlab %*
+"%VPY%" -P -m bufferlab %*
 exit /b %ERRORLEVEL%

@@ -60,4 +60,4 @@ if ! venv_ok; then
   say "ready."
 fi
 
-exec "$VENV/bin/python" -m bufferlab "$@"
+exec "$VENV/bin/python" -P -m bufferlab "$@"
