@@ -23,8 +23,6 @@ COLUMNS: tuple[Column, ...] = (
     Column("throughput_mbps", "Throughput", "Mbps", "higher", 2),
     Column("loss_rate", "Loss", "%", "lower", 2, 100.0),
     Column("avg_queue_delay_ms", "Avg q-delay", "ms", "lower", 2),
-    Column("p95_queue_delay_ms", "p95 q-delay", "ms", "lower", 2),
-    Column("max_queue_len", "Max queue", "pkts", "lower", 0),
     Column("link_utilisation", "Link util", "%", None, 1, 100.0),
 )
 COLUMN_BY_KEY = {c.key: c for c in COLUMNS}
@@ -100,10 +98,9 @@ def observations(runs: list[RunRecord], rel_tol: float = 0.02) -> list[str]:
         )
     names = {i: run_name(r, i) for i, r in enumerate(runs)}
     for key, phrase in (
-        ("p95_queue_delay_ms", "95th-percentile queueing delay"),
-        ("avg_queue_delay_ms", "average queueing delay"),
         ("loss_rate", "packet-loss rate"),
         ("throughput_mbps", "delivered throughput"),
+        ("avg_queue_delay_ms", "average queueing delay"),
     ):
         col = COLUMN_BY_KEY[key]
         vals = [

@@ -36,7 +36,7 @@ class ResultsScreen(LabScreen):
                 yield LineChart("Queue occupancy (pkts)", " pkts", "cyan", id="r-q")
                 yield LineChart("Throughput (Mbps)", " Mbps", "green", id="r-thr")
                 yield LineChart("Queueing delay (ms)", " ms", "yellow", id="r-d")
-                yield LineChart("Drops per bin", "", "red", agg="sum", id="r-drop")
+                yield LineChart("Packet loss (% per bin)", "%", "red", id="r-drop")
 
     def on_mount(self) -> None:
         super().on_mount()
@@ -81,6 +81,6 @@ class ResultsScreen(LabScreen):
                 ("r-q", "queue_len", cap),
                 ("r-thr", "throughput_mbps", link),
                 ("r-d", "queue_delay_ms", None),
-                ("r-drop", "drops", None),
+                ("r-drop", "loss_pct", None),
             ):
                 self.query_one(f"#{cid}", LineChart).set_data(s[key], ymax, x_end, s["warmup_s"])

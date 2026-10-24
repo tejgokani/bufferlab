@@ -95,14 +95,13 @@ class BufferLabApp(App):
 
     # -- screens -------------------------------------------------------------------
     def _screen_classes(self) -> dict[str, Any]:
-        from bufferlab.tui.screens.algolab import AlgorithmLabScreen
         from bufferlab.tui.screens.compare import CompareScreen
         from bufferlab.tui.screens.dashboard import DashboardScreen
         from bufferlab.tui.screens.export import ExportScreen
         from bufferlab.tui.screens.help import HelpScreen
         from bufferlab.tui.screens.history import HistoryScreen
+        from bufferlab.tui.screens.network import NetworkScreen
         from bufferlab.tui.screens.new_experiment import NewExperimentScreen
-        from bufferlab.tui.screens.research import ResearchScreen
         from bufferlab.tui.screens.results import ResultsScreen
         from bufferlab.tui.screens.scenarios import ScenarioScreen
         from bufferlab.tui.screens.settings import SettingsScreen
@@ -111,14 +110,13 @@ class BufferLabApp(App):
             "dashboard": DashboardScreen,
             "new": NewExperimentScreen,
             "scenarios": ScenarioScreen,
-            "lab": AlgorithmLabScreen,
             "compare": CompareScreen,
             "history": HistoryScreen,
             "results": ResultsScreen,
             "export": ExportScreen,
             "settings": SettingsScreen,
             "help": HelpScreen,
-            "research": ResearchScreen,
+            "network": NetworkScreen,
         }
 
     def on_mount(self) -> None:
@@ -320,7 +318,6 @@ class BufferLabApp(App):
                 self._call(self._on_batch_progress, done, total, label)
 
             result = run_batch(spec, on_prog, self.cancel_event, on_run=self.repo.save_run)
-            self.repo.save_batch(result.batch_id, spec)
             self._call(self._finish_batch, spec, result)
         except Exception as exc:
             log.exception("batch failed")

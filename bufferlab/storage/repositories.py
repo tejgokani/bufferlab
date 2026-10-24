@@ -9,7 +9,6 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from bufferlab.experiments.batch import BatchSpec
 from bufferlab.experiments.models import ExperimentConfig, RunRecord, utc_now
 from bufferlab.storage.database import connect
 
@@ -155,37 +154,6 @@ class Repository:
     def count_runs(self) -> int:
         with self._lock:
             return self.conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
-
-    # -- batches ---------------------------------------------------------------
-    def save_batch(self, batch_id: str, spec: BatchSpec) -> None:
-        with self._lock, self.conn:
-            self.conn.execute(
-                "INSERT OR REPLACE INTO batches VALUES (?,?,?,?)",
-                (batch_id, utc_now(), spec.name, json.dumps(spec.to_dict())),
-            )
-
-    def get_batch(self, batch_id: str) -> tuple[BatchSpec, list[RunRecord]]:
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT * FROM batches WHERE batch_id LIKE ?", (batch_id + "%",)
-            ).fetchone()
-            if not row:
-                raise NotFoundError(f"no batch matches {batch_id!r}")
-            rows = self.conn.execute(
-                "SELECT * FROM runs WHERE batch_id=? ORDER BY created_at, rowid", (row["batch_id"],)
-            ).fetchall()
-            return BatchSpec.from_dict(json.loads(row["spec_json"])), [
-                self._row_to_run(r, with_series=False) for r in rows
-            ]
-
-    def list_batches(self) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self.conn.execute(
-                "SELECT b.batch_id, b.created_at, b.name, COUNT(r.run_id) AS n_runs "
-                "FROM batches b LEFT JOIN runs r ON r.batch_id=b.batch_id "
-                "GROUP BY b.batch_id ORDER BY b.created_at DESC"
-            ).fetchall()
-            return [dict(r) for r in rows]
 
     # -- saved configs -----------------------------------------------------------
     def save_config(self, name: str, kind: str, payload: dict[str, Any]) -> None:

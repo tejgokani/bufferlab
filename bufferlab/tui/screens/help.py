@@ -23,24 +23,24 @@ SECTIONS = [
         "Scenario Library (F7)",
         "Built-in experiment configurations; run with one or all algorithms.",
     ),
-    ("Algorithm Lab (F8)", "Tune RED / CoDel / Drop-Tail parameters and compare trials."),
+    (
+        "My Network (F8)",
+        "Measure the network you are on, then simulate its packet loss and throughput at other loads.",
+    ),
     (
         "Compare Runs (F4)",
         "Side-by-side metrics, sorting, bars and measured-evidence observations.",
     ),
     ("Experiment History (F5)", "Search, duplicate, rerun and delete saved runs."),
     ("Results Explorer (F9)", "Every metric and time series of one run."),
-    ("Export Center (F6)", "CSV, JSON, Markdown and plain-text exports and batch reports."),
-    (
-        "Research Mode (F10)",
-        "Algorithm x load x buffer matrices with replications and a written report.",
-    ),
+    ("Export Center (F6)", "CSV, JSON, Markdown and plain-text exports."),
     ("Settings (Ctrl+T)", "ASCII charts, theme, defaults."),
 ]
 
 ABOUT = (
-    "BufferLab is a discrete-event simulator and research tool for studying queue-management "
-    "algorithms (Drop-Tail, RED, CoDel) at a single bottleneck. It is NOT a substitute for a "
+    "BufferLab analyses packet loss and throughput. It measures the network you are on (ping and a "
+    "download test), then runs a discrete-event simulation of that network to predict loss and "
+    "throughput at other loads with Drop-Tail, RED or CoDel queues. It is NOT a substitute for a "
     "validated production-network simulator such as ns-3. It does not model TCP congestion control, "
     "retransmissions or multiple hops, and its RED/CoDel implementations are not validated against "
     "any operating-system implementation. Every number shown comes from a simulation run you "

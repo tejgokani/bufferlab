@@ -5,15 +5,12 @@ from __future__ import annotations
 import csv
 import io
 import json
-from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from bufferlab import SCHEMA_VERSION, __version__
 from bufferlab.analysis.comparison import COLUMNS, comparison_rows, fmt_value, observations
-from bufferlab.analysis.statistics import SummaryStats, summarize
-from bufferlab.experiments.batch import BatchSpec
 from bufferlab.experiments.models import RunRecord
 
 FORMATS = ("csv", "json", "md", "txt")
@@ -191,178 +188,6 @@ def runs_report(runs: list[RunRecord], title: str = "BufferLab run comparison") 
     return doc
 
 
-def group_by_point(runs: list[RunRecord]) -> list[list[RunRecord]]:
-    """Group replications that share a configuration (ignoring seed/name)."""
-    groups: dict[str, list[RunRecord]] = defaultdict(list)
-    for r in runs:
-        d = r.config.to_dict()
-        for k in ("seed", "name", "scenario"):
-            d.pop(k, None)
-        groups[json.dumps(d, sort_keys=True)].append(r)
-    return [sorted(g, key=lambda r: r.replicate) for g in groups.values()]
-
-
-def _pm(s: SummaryStats, digits: int = 2, scale: float = 1.0) -> str:
-    if s.mean is None:
-        return "n/a"
-    if s.n < 2 or s.half_width is None:
-        return f"{s.mean * scale:.{digits}f} (n=1)"
-    return f"{s.mean * scale:.{digits}f} ± {s.half_width * scale:.{digits}f}"
-
-
-def batch_report(spec: BatchSpec, runs: list[RunRecord]) -> Doc:
-    doc = Doc(f"BufferLab experiment report: {spec.name}")
-    doc.h("Objective")
-    doc.p(spec.objective or "Compare queue-management algorithms across the configured factors.")
-    doc.h("Configuration")
-    doc.code("\n".join(spec.base.summary_lines()))
-    doc.p("Factors varied: " + (", ".join(f"{k} = {v}" for k, v in spec.factors.items()) or "none"))
-    doc.h("Algorithms tested")
-    algs = sorted({r.config.algorithm for r in runs})
-    doc.bullets(
-        [
-            f"{a}: {json.dumps(next(r.resolved_params for r in runs if r.config.algorithm == a))}"
-            for a in algs
-        ]
-    )
-    doc.h("Methodology")
-    doc.bullets(
-        [
-            f"{spec.replications} independent replication(s) per point; replication k uses seed "
-            f"{spec.seed0()} + k, so each algorithm sees the same traffic realisation per replication "
-            "(common random numbers).",
-            f"Each run lasts {spec.base.duration_s:g}s; the first {spec.base.warmup_s:g}s is warm-up and "
-            "excluded from all statistics.",
-            "Offered-load percentages are converted to packet rates from link bandwidth and packet size; "
-            "delivered throughput is measured separately and is not assumed equal to offered load.",
-            "Mean ± half-width of a 95% Student-t interval across replications is shown "
-            "(n=1 shows the single value).",
-            f"BufferLab {__version__}, schema {SCHEMA_VERSION}; rerun with the same spec to reproduce.",
-        ]
-    )
-    doc.h("Metrics")
-    doc.bullets(METRIC_DEFINITIONS)
-    doc.h("Results")
-    groups = group_by_point(runs)
-    varying = [k for k in spec.factors if k not in ("algorithm",)]
-    headers = (
-        ["Algorithm"]
-        + [k.replace("param.", "") for k in varying]
-        + [
-            "n",
-            "Throughput (Mbps)",
-            "Loss (%)",
-            "Avg q-delay (ms)",
-            "p95 q-delay (ms)",
-            "Link util (%)",
-        ]
-    )
-    rows = []
-    summaries: dict[int, dict[str, SummaryStats]] = {}
-    for gi, g in enumerate(groups):
-        c = g[0].config
-        s = {
-            m: summarize([r.metrics.get(m) for r in g])
-            for m in (
-                "throughput_mbps",
-                "loss_rate",
-                "avg_queue_delay_ms",
-                "p95_queue_delay_ms",
-                "link_utilisation",
-            )
-        }
-        summaries[gi] = s
-        fvals = []
-        for k in varying:
-            if k.startswith("param."):
-                fvals.append(str(c.algorithm_params.get(k[6:], "-")))
-            else:
-                fvals.append(str(getattr(c, k)))
-        rows.append(
-            [c.algorithm]
-            + fvals
-            + [
-                str(len(g)),
-                _pm(s["throughput_mbps"]),
-                _pm(s["loss_rate"], 2, 100),
-                _pm(s["avg_queue_delay_ms"]),
-                _pm(s["p95_queue_delay_ms"]),
-                _pm(s["link_utilisation"], 1, 100),
-            ]
-        )
-    doc.table(headers, rows)
-    doc.h("Comparative observations")
-    doc.p(AUTO_LABEL)
-    doc.bullets(batch_observations(groups, summaries, varying))
-    doc.h("Limitations")
-    doc.bullets(LIMITATIONS)
-    doc.h("Questions for further investigation")
-    doc.bullets(
-        [
-            "Do the observed ordering and trade-offs persist with more replications or longer runs?",
-            "How sensitive are the results to RED thresholds/weight and CoDel target/interval?",
-            "How would closed-loop (TCP-like) sources change delay and loss under the same buffers?",
-            "Do the results change with different traffic models (constant vs Poisson vs bursty)?",
-        ]
-    )
-    return doc
-
-
-def batch_observations(
-    groups: list[list[RunRecord]], summaries: dict[int, dict[str, SummaryStats]], varying: list[str]
-) -> list[str]:
-    """Per condition (all non-algorithm factors fixed): who had the lowest mean p95 delay."""
-    by_cond: dict[tuple, list[int]] = defaultdict(list)
-    for gi, g in enumerate(groups):
-        c = g[0].config
-        cond = tuple(
-            (k, c.algorithm_params.get(k[6:]) if k.startswith("param.") else getattr(c, k))
-            for k in varying
-        )
-        by_cond[cond].append(gi)
-    out: list[str] = []
-    for cond, idxs in by_cond.items():
-        if len(idxs) < 2:
-            continue
-        label = ", ".join(f"{k.replace('param.', '')}={v}" for k, v in cond) or "all conditions"
-        ranked = sorted(
-            (i for i in idxs if summaries[i]["p95_queue_delay_ms"].mean is not None),
-            key=lambda i: summaries[i]["p95_queue_delay_ms"].mean,
-        )
-        if len(ranked) < 2:
-            continue
-        lo, hi = ranked[0], ranked[-1]
-        s_lo, s_hi = summaries[lo]["p95_queue_delay_ms"], summaries[hi]["p95_queue_delay_ms"]
-        a_lo, a_hi = groups[lo][0].config.algorithm, groups[hi][0].config.algorithm
-        if s_hi.mean - s_lo.mean <= 0.02 * max(s_hi.mean, 1e-9):
-            out.append(
-                f"[{label}] mean p95 queueing delay was within 2% across algorithms "
-                f"({s_lo.mean:.2f}-{s_hi.mean:.2f} ms); no meaningful difference observed."
-            )
-            continue
-        overlap = (
-            s_lo.ci_high is not None and s_hi.ci_low is not None and s_lo.ci_high >= s_hi.ci_low
-        )
-        note = (
-            (
-                "the 95% intervals overlap, so the difference is not distinguishable from "
-                "run-to-run variation at this sample size"
-                if overlap
-                else "the 95% intervals do not overlap (not a formal significance test)"
-            )
-            if s_lo.n >= 2 and s_hi.n >= 2
-            else "only one replication, so variability is unknown"
-        )
-        loss_lo = summaries[lo]["loss_rate"].mean
-        loss_hi = summaries[hi]["loss_rate"].mean
-        out.append(
-            f"[{label}] {a_lo} had the lowest mean p95 queueing delay "
-            f"({s_lo.mean:.2f} ms) vs {a_hi} ({s_hi.mean:.2f} ms); {note}. "
-            f"Mean loss: {a_lo} {100 * (loss_lo or 0):.2f}% vs {a_hi} {100 * (loss_hi or 0):.2f}%."
-        )
-    return out or ["Not enough comparable points for automated observations."]
-
-
 # -- file export -----------------------------------------------------------------
 def export_runs(
     runs: list[RunRecord], fmt: str, path: Path | str, include_series: bool = True
@@ -393,28 +218,3 @@ def export_runs(
     else:
         path.write_text(runs_report(runs).render(fmt), encoding="utf-8")
     return path
-
-
-def export_batch(spec: BatchSpec, runs: list[RunRecord], fmt: str, path: Path | str) -> Path:
-    if fmt in ("md", "txt"):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(batch_report(spec, runs).render(fmt), encoding="utf-8")
-        return path
-    if fmt == "json":
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {
-                    "bufferlab_version": __version__,
-                    "schema_version": SCHEMA_VERSION,
-                    "spec": spec.to_dict(),
-                    "runs": [run_to_json(r, False) for r in runs],
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return path
-    return export_runs(runs, fmt, path, include_series=False)

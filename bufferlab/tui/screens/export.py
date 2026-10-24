@@ -10,7 +10,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, Label, Select, Static
 
-from bufferlab.analysis.reporting import FORMATS, export_batch, export_runs
+from bufferlab.analysis.reporting import FORMATS, export_runs
 from bufferlab.tui.screens.base import LabScreen
 from bufferlab.utils.paths import exports_dir
 
@@ -29,7 +29,7 @@ class ExportScreen(LabScreen):
     HELP = (
         "Export Center\n\nChoose what to export and the format, then press Ctrl+E.\n\n"
         "Sources: the runs marked in History/Compare, the run currently open in Results, every saved "
-        "run, or a stored batch (which produces the methodology/results/limitations report).\n\n"
+        "run.\n\n"
         "Exports include the configuration, seed, resolved algorithm parameters, software version and "
         "schema version needed to reproduce the run."
     )
@@ -66,13 +66,6 @@ class ExportScreen(LabScreen):
         if self.app.focus_run_id:
             opts.append((f"Open run ({self.app.focus_run_id})", "focus"))
         opts.append(("All saved runs", "all"))
-        for b in self.app.repo.list_batches():
-            opts.append(
-                (
-                    f"Batch {b['batch_id']} · {b['name']} ({b['n_runs']} runs)",
-                    f"batch:{b['batch_id']}",
-                )
-            )
         what.set_options(opts)
         what.value = opts[0][1]
         self.update_path()
@@ -89,7 +82,7 @@ class ExportScreen(LabScreen):
             "marked": "runs-marked",
             "focus": str(self.app.focus_run_id),
             "all": "runs-all",
-        }.get(what, what.replace(":", "-") if what.startswith("batch:") else "export")
+        }.get(what, "export")
         self.query_one("#path", Input).value = str(exports_dir() / f"{stem}.{fmt}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -102,19 +95,15 @@ class ExportScreen(LabScreen):
         msg = self.query_one("#msg", Static)
         try:
             repo = self.app.repo
-            if isinstance(what, str) and what.startswith("batch:"):
-                spec, runs = repo.get_batch(what[6:])
-                out = export_batch(spec, runs, fmt, path)
-            else:
-                ids = (
-                    self.app.selected_runs
-                    if what == "marked"
-                    else [self.app.focus_run_id]
-                    if what == "focus"
-                    else [r.run_id for r in repo.list_runs()]
-                )
-                runs = [repo.get_run(i) for i in ids]
-                out = export_runs(runs, fmt, path)
+            ids = (
+                self.app.selected_runs
+                if what == "marked"
+                else [self.app.focus_run_id]
+                if what == "focus"
+                else [r.run_id for r in repo.list_runs()]
+            )
+            runs = [repo.get_run(i) for i in ids]
+            out = export_runs(runs, fmt, path)
             msg.update(Text(f"✓ wrote {out}", style="green"))
         except (OSError, ValueError, LookupError) as exc:
             msg.update(Text(f"✗ {exc}", style="red"))

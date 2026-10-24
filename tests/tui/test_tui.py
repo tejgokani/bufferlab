@@ -160,31 +160,6 @@ async def test_scenario_library_runs_all_algorithms_and_opens_compare(tmp_path):
         assert len(app.selected_runs) == 3
 
 
-async def test_research_mode_generates_report(tmp_path):
-    app = BufferLabApp(Repository(tmp_path / "t.db"))
-    async with app.run_test(size=(140, 45)) as pilot:
-        await pilot.press("f10")
-        await pilot.pause(0.3)
-        s = app.screen
-        s.query_one("#loads").value = "60,140"
-        s.query_one("#caps").value = "10"
-        s.query_one("#reps").value = "2"
-        s.query_one("#dur").value = "6"
-        s.query_one("#warm").value = "1"
-        await pilot.pause(0.2)
-        assert "6 points" in str(s.query_one("#plan").content)
-        await pilot.press("ctrl+r")
-        await settle(pilot, app, lambda: app.current_name() == "research", timeout=120)
-        assert app.repo.count_runs() == 12
-        assert app.last_batch is not None
-        await pilot.press("ctrl+w")
-        await pilot.pause(0.3)
-        assert any(
-            p.name.startswith("research-")
-            for p in __import__("bufferlab.utils.paths", fromlist=["x"]).exports_dir().iterdir()
-        )
-
-
 async def test_contextual_help_and_quit_behaviour(tmp_path):
     app = BufferLabApp(Repository(tmp_path / "t.db"))
     async with app.run_test(size=(100, 40)) as pilot:
@@ -226,7 +201,9 @@ async def test_results_screen_ignores_empty_selection(tmp_path):
     repo = Repository(tmp_path / "t.db")
     from bufferlab.experiments.runner import run_experiment
 
-    repo.save_run(run_experiment(scenario_config("light-traffic", "red", duration_s=5.0, warmup_s=1.0)))
+    repo.save_run(
+        run_experiment(scenario_config("light-traffic", "red", duration_s=5.0, warmup_s=1.0))
+    )
     app = BufferLabApp(repo)
     async with app.run_test(size=(100, 40)) as pilot:
         await pilot.press("f9")
@@ -243,3 +220,48 @@ async def test_results_screen_ignores_empty_selection(tmp_path):
             await pilot.press(key)
             await pilot.pause(0.2)
             assert app.current_name() != "dashboard"
+
+
+async def test_my_network_screen_measure_then_predict(tmp_path, monkeypatch):
+    from bufferlab.netprobe import probe as pr
+
+    meas = pr.Measurement(
+        "2026-01-01T00:00:00+00:00",
+        "1.1.1.1",
+        "u",
+        "linux",
+        pr.PingStats(10, [30.0] * 10),
+        pr.PingStats(10, [130.0] * 10),
+        12.0,
+        1,
+    )
+    monkeypatch.setattr(pr, "run_probe", lambda *a, **k: meas)
+    app = BufferLabApp(Repository(tmp_path / "t.db"))
+    async with app.run_test(size=(130, 45)) as pilot:
+        await pilot.press("f8")
+        await pilot.pause(0.3)
+        scr = app.screen
+        assert "Nothing measured yet" in str(scr.query_one("#profile").content)
+        await pilot.press("r")  # predicting before measuring is refused, not crashed
+        await pilot.pause(0.2)
+        await pilot.press("p")  # asks for consent first
+        await pilot.pause(0.3)
+        assert app.screen.__class__.__name__ == "ConfirmModal"
+        await pilot.press("n")
+        await pilot.pause(0.2)
+        assert scr.profile is None
+        await pilot.press("p")
+        await pilot.pause(0.3)
+        await pilot.press("y")
+        await settle(pilot, app, lambda: scr.profile is not None)
+        assert "12.0 Mbps" in str(scr.query_one("#profile").content)
+        scr.query_one("#loads").value = "6,24"
+        await pilot.press("f8")
+        await pilot.pause(0.1)
+        scr.action_predict()
+        await settle(pilot, app, lambda: len(scr.preds) == 2)
+        low, high = scr.preds
+        assert low.loss_rate < 0.01 and high.loss_rate > 0.3
+        assert scr.query_one("#tbl").row_count == 2
+        assert app.repo.count_runs() == 2  # predictions are real runs in History
+        assert "SIMULATED" in str(scr.query_one("#summary").content)

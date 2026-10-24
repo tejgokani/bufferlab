@@ -4,9 +4,10 @@
 bufferlab/
   core/         scheduler, events, packets, links, traffic, metrics, simulator   (no UI, no storage)
   algorithms/   base interface, drop_tail, red, codel, registry (param specs, validation)
-  experiments/  models (config + validation + RunRecord), scenarios, runner, batch (sweeps, research matrix)
+  netprobe/     probe (ping + HTTPS download), profile (measurement -> simulator parameters), whatif (predictions)
+  experiments/  models (config + validation + RunRecord), scenarios, runner, batch (run a list of configs)
   storage/      SQLite: database, migrations (PRAGMA user_version), repositories
-  analysis/     statistics (summaries, t-CI), comparison (tables, observations), reporting (exports, reports)
+  analysis/     comparison (loss/throughput tables, observations), reporting (CSV/JSON/MD/text exports)
   tui/          Textual app, screens/, widgets/, styles/, keymap  (no algorithm or simulation logic)
   cli.py        Typer commands; `bufferlab` with no sub-command opens the TUI
   utils/        paths (per-user data dir), logging (key=value file log), validation types
@@ -23,7 +24,7 @@ marshalled with `call_from_thread`. Cancellation is a `threading.Event` checked 
 ## Persistence
 
 `runs` (config JSON, resolved algorithm params, metrics JSON, seed, versions, batch id), `run_series` (zlib-compressed JSON, ≤ 200 bins × 7 channels per run),
-`batches` (spec JSON), `saved_configs` (experiment configs and algorithm parameter sets). Packet traces are never stored. Location:
+`saved_configs` (experiment configs and the measured network profile, kind `network`). Packet traces are never stored. Location:
 `$BUFFERLAB_HOME` or the platform data directory (see README).
 
 ## TUI

@@ -26,7 +26,7 @@ def run_row(r: RunRecord, marked: bool) -> tuple:
         str(r.config.seed),
         fmt.mbps(m["throughput_mbps"]),
         fmt.pct(m["loss_rate"]),
-        fmt.ms(m["p95_queue_delay_ms"]),
+        fmt.mbps(m["offered_load_mbps"]),
         r.batch_id or "",
     )
 
@@ -73,7 +73,7 @@ class HistoryScreen(LabScreen):
             "Seed",
             "Throughput",
             "Loss",
-            "p95 delay",
+            "Offered",
             "Batch",
         )
         self.runs: list[RunRecord] = []

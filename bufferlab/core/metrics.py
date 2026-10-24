@@ -273,5 +273,9 @@ class MetricsCollector:
             "queue_delay_ms": qdel,
             "link_utilisation": util,
             "drops": self.b_drops[:k],
+            "loss_pct": [
+                (100.0 * d / a if a else None)
+                for d, a in zip(self.b_drops[:k], self.b_arrivals[:k], strict=True)
+            ],
             "arrivals": self.b_arrivals[:k],
         }

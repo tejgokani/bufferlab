@@ -14,10 +14,9 @@ from rich.table import Table
 from bufferlab import __version__
 from bufferlab.algorithms import ALGORITHMS, algorithm_keys
 from bufferlab.analysis.comparison import COLUMNS, comparison_rows, fmt_value, observations
-from bufferlab.analysis.reporting import FORMATS, export_batch, export_runs
+from bufferlab.analysis.reporting import FORMATS, export_runs
 from bufferlab.core.traffic import TRAFFIC_MODELS
-from bufferlab.experiments.batch import BatchSpec, research_matrix, run_batch
-from bufferlab.experiments.models import ConfigError, ExperimentConfig, RunRecord
+from bufferlab.experiments.models import ExperimentConfig, RunRecord
 from bufferlab.experiments.runner import run_experiment
 from bufferlab.experiments.scenarios import SCENARIOS, scenario_config
 from bufferlab.storage import AmbiguousIdError, NotFoundError, Repository
@@ -322,158 +321,6 @@ def run_cmd(
         console.print(f"saved as [cyan]{rec.run_id}[/cyan]")
 
 
-def _parse_vary(items: list[str]) -> dict[str, list[Any]]:
-    out: dict[str, list[Any]] = {}
-    for it in items:
-        if "=" not in it:
-            _fail(f"--vary expects key=v1,v2,..., got {it!r}")
-        k, v = it.split("=", 1)
-        out[k.strip()] = [_parse_scalar(x) for x in v.split(",") if x.strip()]
-    return out
-
-
-def _execute_batch(spec: BatchSpec, save: bool, report: Path | None, fmt: str) -> None:
-    for e in spec.validate():
-        _fail(e)
-    total = spec.total_runs()
-    console.print(
-        f"[bold]{spec.name}[/bold]: {len(spec.points())} points x {spec.replications} replication(s) = {total} runs"
-    )
-    repo = _repo() if save else None
-    with Progress(
-        TextColumn("{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=err,
-        transient=True,
-    ) as prog:
-        task = prog.add_task("running", total=total)
-
-        def on_prog(done: int, tot: int, label: str) -> None:
-            prog.update(task, completed=done, description=label[:60])
-
-        try:
-            result = run_batch(spec, on_prog, on_run=(repo.save_run if repo else None))
-        except (ConfigError, ValueError) as e:
-            _fail(str(e))
-            return
-    if repo:
-        repo.save_batch(result.batch_id, spec)
-    from bufferlab.analysis.reporting import batch_report
-
-    doc = batch_report(spec, result.runs)
-    from rich.markdown import Markdown
-
-    console.print(Markdown(doc.to_markdown()))
-    if save:
-        console.print(f"batch id [cyan]{result.batch_id}[/cyan]  ({len(result.runs)} runs saved)")
-    if report:
-        p = export_batch(spec, result.runs, fmt, report)
-        console.print(f"report written to {p}")
-
-
-@app.command("batch")
-def batch_cmd(
-    scenario: Annotated[str, typer.Option("--scenario", "-s")] = "approaching-saturation",
-    algorithm: Annotated[
-        str, typer.Option("--algorithm", "-a", help="Base algorithm (or vary it).")
-    ] = "drop-tail",
-    vary: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--vary",
-            "-v",
-            help="Factor sweep, e.g. offered_load_pct=50,100,150 or param.max_p=0.05,0.2 or algorithm=drop-tail,red (repeatable).",
-        ),
-    ] = None,
-    reps: Annotated[int, typer.Option(help="Replications per point (seeds base+0..n-1).")] = 5,
-    seed: Annotated[int | None, typer.Option(help="Base seed.")] = None,
-    duration: Annotated[float | None, typer.Option()] = None,
-    warmup: Annotated[float | None, typer.Option()] = None,
-    name: Annotated[str, typer.Option()] = "batch",
-    no_save: Annotated[bool, typer.Option("--no-save")] = False,
-    report: Annotated[Path | None, typer.Option(help="Write a report to this path.")] = None,
-    fmt: Annotated[str, typer.Option("--format", help="Report format: md, txt, json, csv")] = "md",
-) -> None:
-    """Run a parameter sweep with repeated runs and print mean +/- 95% CI."""
-    base = _build_config(
-        scenario,
-        algorithm,
-        name,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        duration,
-        warmup,
-        seed,
-        None,
-        None,
-        None,
-    )
-    spec = BatchSpec(name, base, _parse_vary(vary or []), reps, seed)
-    _execute_batch(spec, not no_save, report, fmt)
-
-
-@app.command("research")
-def research_cmd(
-    scenario: Annotated[str, typer.Option("--scenario", "-s")] = "approaching-saturation",
-    loads: Annotated[str, typer.Option(help="Offered loads, % of capacity.")] = "50,75,100,125,150",
-    capacities: Annotated[
-        str, typer.Option(help="Queue capacities (packets): small,medium,large.")
-    ] = "10,50,250",
-    algorithms: Annotated[
-        str, typer.Option(help="Comma-separated algorithms.")
-    ] = "drop-tail,red,codel",
-    reps: Annotated[int, typer.Option()] = 5,
-    seed: Annotated[int | None, typer.Option()] = None,
-    duration: Annotated[float | None, typer.Option()] = None,
-    warmup: Annotated[float | None, typer.Option()] = None,
-    objective: Annotated[
-        str, typer.Option(help="Objective text for the report.")
-    ] = "How do offered load and buffer size affect queueing delay and loss under each queue-management algorithm?",
-    name: Annotated[str, typer.Option()] = "research-matrix",
-    no_save: Annotated[bool, typer.Option("--no-save")] = False,
-    report: Annotated[Path | None, typer.Option(help="Write a report to this path.")] = None,
-    fmt: Annotated[str, typer.Option("--format")] = "md",
-) -> None:
-    """Run the algorithm x load x buffer experiment matrix (Research Mode)."""
-    base = _build_config(
-        scenario,
-        "drop-tail",
-        name,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        duration,
-        warmup,
-        seed,
-        None,
-        None,
-        None,
-    )
-    try:
-        spec = research_matrix(
-            base,
-            algorithms=[a.strip() for a in algorithms.split(",")],
-            load_pcts=[float(x) for x in loads.split(",")],
-            capacities=[int(x) for x in capacities.split(",")],
-            replications=reps,
-            name=name,
-            objective=objective,
-        )
-    except ValueError as e:
-        _fail(str(e))
-        return
-    _execute_batch(spec, not no_save, report, fmt)
-
-
 @app.command("history")
 def history_cmd(
     search: Annotated[
@@ -541,27 +388,15 @@ def compare_cmd(run_ids: Annotated[list[str], typer.Argument(help="Two or more r
 @app.command("export")
 def export_cmd(
     run_ids: Annotated[list[str] | None, typer.Argument(help="Run IDs to export.")] = None,
-    batch: Annotated[
-        str | None, typer.Option("--batch", help="Export a whole batch report instead.")
-    ] = None,
     fmt: Annotated[str, typer.Option("--format", "-f", help=f"{', '.join(FORMATS)}")] = "csv",
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
 ) -> None:
-    """Export runs (or a batch report) to CSV, JSON, Markdown or text."""
+    """Export runs to CSV, JSON, Markdown or text."""
     if fmt not in FORMATS:
         _fail(f"unsupported format {fmt!r}; choose from {', '.join(FORMATS)}")
     repo = _repo()
-    if batch:
-        try:
-            spec, runs = repo.get_batch(batch)
-        except NotFoundError as e:
-            _fail(str(e), 1)
-            return
-        out = output or exports_dir() / f"batch-{batch}.{fmt}"
-        console.print(f"wrote {export_batch(spec, runs, fmt, out)}")
-        return
     if not run_ids:
-        _fail("give RUN_ID(s) or --batch BATCH_ID")
+        _fail("give one or more RUN_IDs")
     runs = [repo.get_run(r) for r in _resolve_ids(repo, run_ids)]
     out = output or exports_dir() / (
         f"{runs[0].run_id}.{fmt}" if len(runs) == 1 else f"runs-{len(runs)}.{fmt}"
@@ -614,86 +449,189 @@ def delete_cmd(
     console.print(f"deleted {rec.run_id}")
 
 
-@app.command("plot")
-def plot_cmd(
-    run_ids: Annotated[list[str], typer.Argument(help="Run IDs to plot.")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="PNG/SVG/PDF file.")],
-    kind: Annotated[
-        str, typer.Option(help="series (time series) or bars (metric comparison)")
-    ] = "series",
+# ---- real-network commands -------------------------------------------------------------
+network_app = typer.Typer(
+    help="Measure the network you are on, then simulate how it behaves under load."
+)
+app.add_typer(network_app, name="network")
+
+PROFILE_KIND = "network"
+
+
+def _load_profile(repo: Repository):
+    from bufferlab.netprobe.profile import NetworkProfile
+
+    d = repo.list_configs(PROFILE_KIND).get("latest")
+    return NetworkProfile.from_dict(d) if d else None
+
+
+def _profile_table(p) -> Table:
+    t = Table(
+        title="This network (measured)"
+        if p.ping_target != "manual"
+        else "This network (entered by hand)",
+        show_header=False,
+    )
+    t.add_column(style="cyan")
+    t.add_column()
+
+    def pct(v):
+        return "n/a" if v is None else f"{v * 100:.1f}%"
+
+    t.add_row("Measured", p.taken_at)
+    t.add_row("Download capacity", f"{p.capacity_mbps:.2f} Mbps")
+    t.add_row("Idle latency (median RTT)", f"{p.idle_rtt_ms:.1f} ms")
+    t.add_row(
+        "Latency under load", "n/a" if p.loaded_rtt_ms is None else f"{p.loaded_rtt_ms:.1f} ms"
+    )
+    t.add_row("Packet loss idle / under load (ICMP)", f"{pct(p.idle_loss)} / {pct(p.loaded_loss)}")
+    t.add_row("Estimated buffer", f"{p.buffer_pkts} packets  ({p.buffer_note})")
+    return t
+
+
+@network_app.command("probe")
+def network_probe_cmd(
+    target: Annotated[str, typer.Option(help="Host to ping (ICMP).")] = "1.1.1.1",
+    seconds: Annotated[float, typer.Option(help="Download test length (4-30 s).")] = 8.0,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Consent without prompting.")] = False,
 ) -> None:
-    """Export Matplotlib plots (needs: pip install "bufferlab[plots]")."""
-    from bufferlab.analysis.plots import plot_comparison, plot_runs
+    """Measure capacity, latency and packet loss on this network (sends real traffic)."""
+    from bufferlab.netprobe import probe as pr
+    from bufferlab.netprobe.profile import NetworkProfile
 
-    runs = _resolve_runs(_repo(), run_ids)
-    try:
-        out = (plot_runs if kind == "series" else plot_comparison)(runs, output)
-    except RuntimeError as e:
-        _fail(str(e))
-        return
-    console.print(f"wrote {out}")
-
-
-@app.command("measure")
-def measure_cmd(
-    host: Annotated[
-        str | None, typer.Option(help="iperf3 server to test against (required to run).")
-    ] = None,
-    port: Annotated[int, typer.Option()] = 5201,
-    duration: Annotated[int, typer.Option(help="Seconds (1-600).")] = 10,
-    udp: Annotated[bool, typer.Option("--udp", help="Use UDP instead of TCP.")] = False,
-    udp_rate: Annotated[float | None, typer.Option(help="UDP target rate, Mbps.")] = None,
-    reverse: Annotated[
-        bool, typer.Option("--reverse", help="Server sends to this machine.")
-    ] = False,
-    parallel: Annotated[int, typer.Option(help="Parallel streams (1-16).")] = 1,
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Confirm sending traffic without prompting.")
-    ] = False,
-    output: Annotated[
-        Path | None, typer.Option("--output", "-o", help="Write the measurement as JSON.")
-    ] = None,
-) -> None:
-    """Optional real-network measurement with iperf3 (separate from simulations)."""
-    from bufferlab.measure import iperf
-
-    exe = iperf.find_iperf3()
-    if exe is None:
-        err.print(f"[yellow]{iperf.INSTALL_HINT}[/yellow]")
-    else:
-        console.print(f"iperf3 found: {exe}")
-    if host is None:
-        console.print(
-            "Give --host SERVER to run a measurement. Nothing is sent without an explicit host and confirmation."
-        )
-        raise typer.Exit(0 if exe else 1)
+    if not 4 <= seconds <= 30:
+        _fail("--seconds must be between 4 and 30")
+    host = pr.DEFAULT_URL.split("/")[2]
     if not yes and not typer.confirm(
-        f"Send {'UDP' if udp else 'TCP'} test traffic to {host}:{port} for {duration}s?"
+        f"This pings {target} and downloads test data from {host} for ~{seconds:g}s, using your whole "
+        f"connection (at most {pr.MAX_DOWNLOAD_BYTES // 1_000_000} MB). Continue?"
     ):
         raise typer.Exit(1)
     try:
-        res = iperf.run_client(
-            host,
-            port,
-            duration,
-            "udp" if udp else "tcp",
-            reverse,
-            udp_rate,
-            parallel,
-            confirmed=True,
+        m = pr.run_probe(
+            target, seconds=seconds, progress=lambda msg: err.print(f"[dim]{msg}[/dim]")
         )
-    except iperf.MeasureError as e:
+    except pr.ProbeError as e:
         _fail(str(e), 1)
         return
-    t = Table(title="Measured (iperf3) - not a simulation result", show_header=False)
-    for k, v in res.to_dict().items():
-        t.add_row(k, str(v))
-    console.print(t)
-    if output:
-        import json as _json
+    prof = NetworkProfile.from_measurement(m)
+    _repo().save_config("latest", PROFILE_KIND, prof.to_dict())
+    console.print(_profile_table(prof))
+    console.print("Saved. Next: [cyan]bufferlab network predict[/cyan]")
 
-        output.write_text(_json.dumps(res.to_dict(), indent=2), encoding="utf-8")
-        console.print(f"wrote {output}")
+
+@network_app.command("show")
+def network_show_cmd() -> None:
+    """Show the saved network profile."""
+    p = _load_profile(_repo())
+    if p is None:
+        _fail(
+            "no saved profile; run `bufferlab network probe` (or `predict --capacity-mbps ...`)", 1
+        )
+    console.print(_profile_table(p))
+
+
+@network_app.command("predict")
+def network_predict_cmd(
+    loads: Annotated[
+        str | None,
+        typer.Option(
+            help="Offered loads in Mbps, comma separated (default: 25%..200% of capacity)."
+        ),
+    ] = None,
+    algorithms: Annotated[str, typer.Option(help="drop-tail,red,codel")] = "drop-tail",
+    traffic: Annotated[str, typer.Option(help="poisson | constant | bursty")] = "poisson",
+    capacity_mbps: Annotated[
+        float | None, typer.Option(help="Use this capacity instead of the saved measurement.")
+    ] = None,
+    rtt_ms: Annotated[float, typer.Option(help="With --capacity-mbps: idle RTT.")] = 20.0,
+    buffer_ms: Annotated[
+        float, typer.Option(help="With --capacity-mbps: queueing delay when full.")
+    ] = 20.0,
+    seed: Annotated[int, typer.Option()] = 42,
+) -> None:
+    """Simulate this network at several offered loads: predicted throughput and packet loss."""
+    from bufferlab.netprobe import whatif
+    from bufferlab.netprobe.profile import NetworkProfile
+
+    repo = _repo()
+    if capacity_mbps is not None:
+        prof = NetworkProfile.manual(capacity_mbps, rtt_ms, buffer_ms)
+    else:
+        prof = _load_profile(repo)
+        if prof is None:
+            _fail(
+                "no measurement yet: run `bufferlab network probe` first, or pass --capacity-mbps",
+                1,
+            )
+    algs = [a.strip() for a in algorithms.split(",") if a.strip()]
+    bad = [a for a in algs if a not in algorithm_keys()]
+    if bad:
+        _fail(f"unknown algorithm(s): {', '.join(bad)}")
+    try:
+        load_list = (
+            [float(x) for x in loads.split(",")]
+            if loads
+            else whatif.default_loads(prof.capacity_mbps)
+        )
+    except ValueError:
+        _fail("--loads must be numbers in Mbps, e.g. 5,10,20")
+    if any(x <= 0 for x in load_list):
+        _fail("loads must be positive")
+    console.print(_profile_table(prof))
+    with Progress(
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=err,
+        transient=True,
+    ) as prog:
+        task = prog.add_task("simulating", total=len(load_list) * len(algs))
+        preds = whatif.predict(
+            prof,
+            load_list,
+            algs,
+            traffic,
+            seed,
+            on_run=repo.save_run,
+            on_progress=lambda d, t: prog.update(task, completed=d),
+        )
+    t = Table(title="Predicted behaviour (SIMULATED from the measured values above)")
+    heads = ("Load Mbps", "Load %", "Algorithm", "Thruput Mbps", "Loss", "Avg ms", "p95 ms")
+    for col in heads:
+        t.add_column(
+            col, justify="left" if col == "Algorithm" else "right", no_wrap=True, overflow="fold"
+        )
+
+    for p in preds:
+        loss = "n/a" if p.loss_rate is None else f"{p.loss_rate * 100:.2f}%"
+        avg = "n/a" if p.avg_delay_ms is None else f"{p.avg_delay_ms:.1f}"
+        p95 = "n/a" if p.p95_delay_ms is None else f"{p.p95_delay_ms:.1f}"
+        t.add_row(
+            f"{p.load_mbps:.1f}",
+            f"{p.load_pct:.0f}%",
+            p.algorithm,
+            f"{p.throughput_mbps:.2f}",
+            loss,
+            avg,
+            p95,
+        )
+    console.print(t)
+    for a in algs:
+        k = whatif.knee(preds, a)
+        console.print(
+            f"  {a}: "
+            + (
+                f"loss first exceeds 1% at about {k:g} Mbps offered"
+                if k
+                else "loss stayed under 1% at every tested load"
+            )
+        )
+    console.print(
+        "[dim]Model note: sources are open-loop (UDP-like / many independent users). Real TCP slows down "
+        "when it sees loss, so real TCP loss would be lower and throughput closer to capacity. Runs are "
+        "saved in History.[/dim]"
+    )
 
 
 def main() -> None:

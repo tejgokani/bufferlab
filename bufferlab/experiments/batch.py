@@ -1,4 +1,4 @@
-"""Batch experiments: parameter sweeps x replications, and the research matrix.
+"""Batch experiments: run several configurations in sequence (e.g. one scenario x 3 algorithms).
 
 ``factors`` name what varies between points.  Valid factor keys are any
 :class:`ExperimentConfig` field (e.g. ``offered_load_pct``, ``queue_capacity``,
@@ -21,23 +21,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bufferlab.algorithms import get_algorithm
-from bufferlab.analysis.statistics import SummaryStats, summarize
 from bufferlab.experiments.models import ConfigError, ExperimentConfig, RunRecord
 from bufferlab.experiments.runner import run_experiment
-
-SUMMARY_METRICS = (
-    "throughput_mbps",
-    "loss_rate",
-    "avg_queue_delay_ms",
-    "p95_queue_delay_ms",
-    "link_utilisation",
-    "avg_queue_len",
-    "max_queue_len",
-    "delivery_ratio",
-)
-
-#: Nominal buffer sizes (packets) for the research matrix's small/medium/large.
-CAPACITY_PRESETS = {"small": 10, "medium": 50, "large": 250}
 
 
 @dataclass
@@ -120,9 +105,6 @@ class PointResult:
     factors: dict[str, Any]
     runs: list[RunRecord]
 
-    def summary(self) -> dict[str, SummaryStats]:
-        return {m: summarize([r.metrics.get(m) for r in self.runs]) for m in SUMMARY_METRICS}
-
 
 @dataclass
 class BatchResult:
@@ -183,27 +165,3 @@ def run_batch(
     if on_progress:
         on_progress(done, total, "done" if not cancelled else "cancelled")
     return BatchResult(batch_id, spec, results, cancelled)
-
-
-def research_matrix(
-    base: ExperimentConfig,
-    *,
-    algorithms: list[str] | None = None,
-    load_pcts: list[float] | None = None,
-    capacities: list[int] | None = None,
-    replications: int = 5,
-    name: str = "research-matrix",
-    objective: str = "",
-) -> BatchSpec:
-    """Algorithms x offered-load x queue-capacity matrix (percentages -> concrete pps)."""
-    return BatchSpec(
-        name=name,
-        base=base,
-        factors={
-            "algorithm": algorithms or ["drop-tail", "red", "codel"],
-            "offered_load_pct": load_pcts or [50.0, 75.0, 100.0, 125.0, 150.0],
-            "queue_capacity": capacities or list(CAPACITY_PRESETS.values()),
-        },
-        replications=replications,
-        objective=objective,
-    )

@@ -20,8 +20,6 @@ def test_version_and_help():
     assert r.exit_code == 0 and __version__ in r.output
     for cmd in (
         "run",
-        "batch",
-        "research",
         "history",
         "compare",
         "export",
@@ -77,64 +75,6 @@ def test_red_param_flag_and_delete_confirm():
     assert r.exit_code == 2
 
 
-def test_batch_and_batch_export(tmp_path):
-    r = runner.invoke(
-        app,
-        [
-            "batch",
-            "-s",
-            "light-traffic",
-            "--vary",
-            "algorithm=drop-tail,red",
-            "--vary",
-            "queue_capacity=5,20",
-            "--reps",
-            "2",
-            *FAST,
-            "--report",
-            str(tmp_path / "r.md"),
-        ],
-    )
-    assert r.exit_code == 0, r.output
-    assert (tmp_path / "r.md").read_text().startswith("# BufferLab experiment report")
-    bid = [
-        w
-        for w in r.output.split()
-        if w.startswith("b")
-        and len(w) == 9
-        and w[1:].isalnum()
-        and all(c in "0123456789abcdef" for c in w[1:])
-    ][-1]
-    e = runner.invoke(app, ["export", "--batch", bid, "-f", "md", "-o", str(tmp_path / "x.md")])
-    assert e.exit_code == 0 and (tmp_path / "x.md").exists()
-    assert len(ids(runner.invoke(app, ["history", "--limit", "50"]).output)) == 8
-
-
-def test_research_command(tmp_path):
-    r = runner.invoke(
-        app,
-        [
-            "research",
-            "--loads",
-            "60,140",
-            "--capacities",
-            "10",
-            "--algorithms",
-            "drop-tail,codel",
-            "--reps",
-            "2",
-            *FAST,
-            "--no-save",
-        ],
-    )
-    assert r.exit_code == 0, r.output
-    assert (
-        "4 points" not in r.output
-        and "2 replication" in r.output.replace("(s)", "")
-        or "runs" in r.output
-    )
-
-
 def test_python_dash_m():
     import subprocess
     import sys
@@ -151,6 +91,69 @@ def test_launcher_flag_survives_a_shadowing_bufferlab_directory(tmp_path):
     import sys
 
     (tmp_path / "bufferlab").mkdir()
-    out = subprocess.run([sys.executable, "-P", "-m", "bufferlab", "--version"], cwd=tmp_path,
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, "-P", "-m", "bufferlab", "--version"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
     assert out.returncode == 0 and __version__ in out.stdout
+
+
+def _fake_measurement():
+    from bufferlab.netprobe import probe as pr
+
+    return pr.Measurement(
+        "2026-01-01T00:00:00+00:00",
+        "1.1.1.1",
+        "u",
+        "linux",
+        pr.PingStats(10, [20.0] * 10),
+        pr.PingStats(10, [120.0] * 10),
+        20.0,
+        1,
+    )
+
+
+def test_network_probe_requires_consent_then_saves(monkeypatch):
+    from bufferlab.netprobe import probe as pr
+
+    called = []
+    monkeypatch.setattr(pr, "run_probe", lambda *a, **k: called.append(1) or _fake_measurement())
+    r = runner.invoke(app, ["network", "probe"], input="n\n")
+    assert r.exit_code == 1 and not called  # no traffic without a yes
+    r = runner.invoke(app, ["network", "probe"], input="y\n")
+    assert r.exit_code == 0 and called and "20.00 Mbps" in r.output
+    shown = runner.invoke(app, ["network", "show"])
+    assert shown.exit_code == 0 and "Estimated buffer" in shown.output
+
+
+def test_network_predict_uses_saved_profile_and_saves_runs(monkeypatch):
+    from bufferlab.netprobe import probe as pr
+
+    assert runner.invoke(app, ["network", "predict"]).exit_code == 1  # nothing measured yet
+    monkeypatch.setattr(pr, "run_probe", lambda *a, **k: _fake_measurement())
+    runner.invoke(app, ["network", "probe", "--yes"])
+    r = runner.invoke(
+        app, ["network", "predict", "--loads", "10,40", "--algorithms", "drop-tail,codel"]
+    )
+    assert r.exit_code == 0, r.output
+    assert "SIMULATED" in r.output and "40.0" in r.output and "codel" in r.output
+    assert len(ids(runner.invoke(app, ["history", "--limit", "50"]).output)) == 4
+
+
+def test_network_predict_manual_and_errors():
+    r = runner.invoke(app, ["network", "predict", "--capacity-mbps", "10", "--loads", "5,20"])
+    assert r.exit_code == 0 and "loss first exceeds 1%" in r.output
+    assert (
+        runner.invoke(
+            app, ["network", "predict", "--capacity-mbps", "10", "--loads", "x"]
+        ).exit_code
+        == 2
+    )
+    assert (
+        runner.invoke(
+            app, ["network", "predict", "--capacity-mbps", "10", "--algorithms", "nope"]
+        ).exit_code
+        == 2
+    )

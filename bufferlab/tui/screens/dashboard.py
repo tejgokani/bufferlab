@@ -45,13 +45,11 @@ class DashboardScreen(LabScreen):
             yield MetricCard("Link utilisation", id="c-util")
         with Vertical(id="charts"):
             with Horizontal(id="chart-top"):
-                yield LineChart(
-                    "Queue occupancy (pkts, time-avg per bin)", " pkts", "cyan", id="ch-q"
-                )
                 yield LineChart("Throughput (Mbps)", " Mbps", "green", id="ch-thr")
+                yield LineChart("Packet loss (% of arrivals per bin)", "%", "red", id="ch-drop")
             with Horizontal(id="chart-bottom"):
-                yield LineChart("Queueing delay (ms, mean per bin)", " ms", "yellow", id="ch-d")
-                yield LineChart("Packet drops (per bin)", "", "red", agg="sum", id="ch-drop")
+                yield LineChart("Queue occupancy (pkts)", " pkts", "cyan", id="ch-q")
+                yield LineChart("Queueing delay (ms)", " ms", "yellow", id="ch-d")
         with Horizontal(id="activity"):
             with Vertical(classes="panel", id="progress-panel"):
                 yield Static("Progress", classes="title")
@@ -129,7 +127,7 @@ class DashboardScreen(LabScreen):
             empty.update(
                 Text(
                     "No simulation has been run yet.\n"
-                    "F3 New Experiment · F7 Scenarios (run with all 3 algorithms) · F10 Research Mode",
+                    "F8 My Network (measure your network, predict its loss and throughput) · F3 New Experiment · F7 Scenarios",
                     style="dim",
                 )
             )
@@ -237,6 +235,6 @@ class DashboardScreen(LabScreen):
             ("ch-q", "queue_len", cap),
             ("ch-thr", "throughput_mbps", link),
             ("ch-d", "queue_delay_ms", None),
-            ("ch-drop", "drops", None),
+            ("ch-drop", "loss_pct", None),
         ):
             self.query_one(f"#{cid}", LineChart).set_data(s[key], ymax, x_end, w)

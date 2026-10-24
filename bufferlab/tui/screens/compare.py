@@ -40,7 +40,7 @@ class CompareScreen(LabScreen):
 
     def on_mount(self) -> None:
         super().on_mount()
-        self.sort_idx = SORTABLE.index("p95_queue_delay_ms")
+        self.sort_idx = SORTABLE.index("loss_rate")
         self.runs: list[RunRecord] = []
         t = self.query_one("#tbl", DataTable)
         t.styles.height = "40%"
@@ -53,7 +53,7 @@ class CompareScreen(LabScreen):
             "Seed",
             "Throughput",
             "Loss",
-            "p95 delay",
+            "Offered",
             "Batch",
         )
 

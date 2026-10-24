@@ -3,51 +3,34 @@
 A terminal-native laboratory for simulating, analysing and comparing network **queue-management algorithms**
 (Drop-Tail, RED, CoDel) at a single bottleneck link.
 
-> **BufferLab is a simulator and research tool, not a substitute for a validated production-network simulator**
+> **BufferLab is a simulator, not a substitute for a validated production-network simulator**
 > (ns-3, OMNeT++…) and not a measurement of any real network. Every number it shows comes from a simulation
 > you ran; scenarios are *configurations*, never stored results.
 
-## 1. What it does
+## What it does
 
-It runs a deterministic discrete-event simulation of `sources → queue manager → bottleneck link → destination`,
-measures throughput, loss, queueing delay and queue occupancy from the simulated events, stores every run in
-SQLite, and lets you compare runs, run replicated experiment matrices, and export reports. A Textual TUI is the
-primary interface; every feature is also available from the CLI.
+**BufferLab measures the real network you are on, then simulates how that network behaves under other loads and tells you the
+packet loss and throughput it would deliver.**
 
-## 2. The problem it investigates
+1. `bufferlab network probe` (or F8 → `p`): pings and downloads for ~15 s (asks first) → capacity, idle/loaded latency, packet loss, estimated buffer.
+2. `bufferlab network predict` (or F8 → `r`): a discrete-event simulation configured from those measurements, at 25 %…200 % of capacity
+   (or your own Mbps list) → predicted **throughput and packet loss** (plus queueing delay) per load, for Drop-Tail, RED or CoDel queues.
 
-*How do different queue-management mechanisms affect throughput, packet loss, queueing delay and latency under
-varying traffic loads and bottleneck bandwidths?*
+Measured numbers and simulated numbers are labelled separately everywhere. Details and caveats: [docs/my-network.md](docs/my-network.md).
+Beyond your own network it is a general loss/throughput simulator: scenarios, a validated configuration form, run comparison, history and export.
 
-## 3. Key features
+> BufferLab is a simulator, not a substitute for a validated production-network simulator such as ns-3. Predictions assume
+> open-loop (non-TCP-adaptive) traffic; see the limitations.
 
-* Pure-Python event-driven simulator (priority-queue scheduler, seeded, faster than real time, no external tools).
-* Drop-Tail, RED (EWMA, count-based drops, idle decay, optional gentle) and CoDel (RFC 8289 state machine).
-* Constant, Poisson and on/off bursty traffic; multi-source; propagation delay; warm-up; event limit; cancellation.
-* 15+ metrics with documented accounting (packet cohort + time window; `generated = delivered + dropped + unresolved`).
-* TUI: dashboard with live cards/charts, validated experiment form, scenario library, algorithm lab, run comparison,
-  history, results explorer, export centre, Research Mode, settings, contextual help — all keyboard driven.
-* Reproducibility: same config + seed ⇒ identical results; software and schema versions stored with each run.
-* Batch sweeps and research matrices with replications, mean / SD / 95 % t-interval, generated written reports.
-* CSV / JSON / Markdown / plain-text export.
+## Key features
 
-## 4. Architecture
+* Real-network probe (ping + HTTPS download, no admin rights) → simulator parameters.
+* Deterministic discrete-event simulator, Drop-Tail / RED / CoDel, constant / Poisson / bursty traffic, seeded and reproducible.
+* Loss- and throughput-first metrics with documented accounting (`generated = delivered + dropped + unresolved`), see [docs/metrics.md](docs/metrics.md).
+* Textual TUI (Dashboard, My Network, New Experiment, Scenarios, Compare, History, Results, Export) and a CLI for everything.
+* SQLite history; CSV / JSON / Markdown / text export.
 
-`core/` (simulator) ← `algorithms/` ← `experiments/` ← `storage/` + `analysis/` ← `cli.py` + `tui/`.
-The TUI contains no networking logic; the simulator and algorithms run without it. See [docs/architecture.md](docs/architecture.md).
-
-## 5. Supported platforms
-
-Python ≥ 3.11 on macOS, Linux and Windows 10/11. Nothing in the core uses shell commands or OS-specific APIs
-(`pathlib`, `sqlite3`, `threading` only). **Tested so far: macOS (Apple Silicon) with Python 3.12 only.** Linux and Windows
-are expected to work but have **not** been run — see [Known limitations](#15-known-limitations).
-
-## 6. Prerequisites
-
-Python 3.11+ and `pip`. Dependencies installed automatically: `textual`, `rich`, `typer`. No admin rights, Docker, ns-3 or
-Mininet required, and no internet access is needed after installation.
-
-## 7. Installation
+## Installation
 
 ### One-line install (no manual environment setup)
 
@@ -93,7 +76,7 @@ bufferlab --version
 (PowerShell may need `Set-ExecutionPolicy -Scope Process RemoteSigned` once to allow the activation script.)
 Prefer [uv](https://github.com/astral-sh/uv)? `uv venv && uv pip install -e ".[dev]"` works too.
 
-## 8. Running the TUI
+## Running the TUI
 
 ```bash
 bufferlab            # or: python -m bufferlab
@@ -104,13 +87,12 @@ bufferlab            # or: python -m bufferlab
 | F1 | Help & About |
 | F2 | Dashboard |
 | F3 | New Experiment (Ctrl+R run, Ctrl+S save config) |
-| F4 | Compare Runs (Space mark, S sort metric) |
+| F4 | Compare Runs (Space mark, S sort metric; loss/throughput first) |
 | F5 | Experiment History (/ search, Space mark, Enter open, U duplicate, R rerun, D delete) |
 | F6 | Export Center (Ctrl+E export) |
 | F7 | Scenario Library (R run, C run with all 3 algorithms and compare) |
-| F8 | Algorithm Lab (Ctrl+R trial, Ctrl+S save parameter set) |
+| F8 | **My Network**: `p` measure your network, `r` predict loss & throughput, `x` cancel |
 | F9 | Results Explorer |
-| F10 | Research Mode (Ctrl+R run matrix, Ctrl+W write report) |
 | Ctrl+T | Settings |
 | ? | Contextual help for the current screen |
 | Esc | Cancel a running simulation (Dashboard) / go back |
@@ -119,9 +101,13 @@ bufferlab            # or: python -m bufferlab
 
 The footer always shows the active bindings. Works from 80 columns up; an ASCII-only chart mode is in Settings.
 
-## 9. Running experiments from the CLI
+## CLI
 
 ```bash
+bufferlab network probe                               # measure this network (asks first)
+bufferlab network predict [--loads 5,10,20] [--algorithms drop-tail,red,codel] [--traffic bursty]
+bufferlab network show                                # saved measurement
+bufferlab network predict --capacity-mbps 50 --rtt-ms 30 --buffer-ms 100   # no measurement: type it in
 bufferlab scenarios                                   # list scenarios
 bufferlab algorithms                                  # list algorithms and parameters
 bufferlab run --scenario heavy-congestion --algorithm codel
@@ -132,17 +118,11 @@ bufferlab compare RUN_ID_1 RUN_ID_2 [...]
 bufferlab export RUN_ID [RUN_ID ...] --format csv|json|md|txt [-o FILE]
 bufferlab rerun RUN_ID [--new-seed N]                 # same seed => identical result
 bufferlab delete RUN_ID                               # asks for confirmation (-y to skip)
-bufferlab plot RUN_ID [RUN_ID ...] -o plot.png [--kind series|bars]   # needs: pip install "bufferlab[plots]"
-bufferlab measure --host SERVER [--udp] [--duration 10]                # optional iperf3 measurement, asks first
-bufferlab batch -s approaching-saturation --vary algorithm=drop-tail,red,codel \
-        --vary offered_load_pct=50,100,150 --reps 5 --report report.md
-bufferlab research --reps 5 --report research.md      # algorithm x load x buffer matrix
-bufferlab export --batch BATCH_ID --format md         # re-render a stored batch report
 ```
 
 Every command accepts `--help`. `RUN_ID` may be any unambiguous prefix.
 
-## 10. Example configurations
+## Built-in scenarios
 
 Built-in scenarios (all 10 Mbps / 1500 B packets / Poisson unless noted; durations include warm-up in the table of `bufferlab scenarios`):
 
@@ -160,29 +140,28 @@ Built-in scenarios (all 10 Mbps / 1500 B packets / Poisson unless noted; duratio
 Any field can be overridden (`--load`, `--capacity`, `--bandwidth`, `--packet-size`, `--traffic`, `--sources`, `--duration`,
 `--warmup`, `--seed`, `--prop-delay`, `--param key=value`).
 
-## 11. Understanding the metrics
+## Understanding the metrics
 
 Offered load vs delivered throughput, packet-loss rate (`dropped / generated`, warm-up excluded, unresolved packets reported
 separately), queueing delay (mean / median / p95 / max — **not RTT**), queue occupancy, link and queue utilisation. Exact
 definitions and denominators: [docs/metrics.md](docs/metrics.md). Model assumptions: [docs/simulation-model.md](docs/simulation-model.md).
 
-## 12. Understanding the algorithms
+## Understanding the algorithms
 
 Equations, parameters, defaults and deviations from the reference descriptions: [docs/algorithms.md](docs/algorithms.md).
 RED and CoDel are simplified, unvalidated implementations (drop-only, no ECN) and make no claim of compliance with any
 operating-system implementation.
 
-## 13. Exporting results
+## Exporting results
 
 TUI: F6. CLI: `bufferlab export …`. CSV has one row per run (config, resolved parameters, seed, versions and all metrics);
 JSON adds time series; Markdown/text produce a report with configuration, metric definitions, results, automated observations and
-limitations. Batch/research reports add objective, methodology, mean ± 95 % CI tables and questions for further investigation.
-Default folder: `<data dir>/exports`. Method: [docs/research-methodology.md](docs/research-methodology.md).
+limitations. Default folder: `<data dir>/exports`. 
 
 Data directory: macOS `~/Library/Application Support/BufferLab`, Linux `$XDG_DATA_HOME/bufferlab` (default `~/.local/share/bufferlab`),
 Windows `%APPDATA%\BufferLab`; override with `BUFFERLAB_HOME`.
 
-## 14. Running tests
+## Running tests
 
 ```bash
 pip install -e ".[dev]"
@@ -192,23 +171,23 @@ ruff check .
 
 The TUI tests drive the real app headlessly; they need no terminal. Each test uses an isolated `BUFFERLAB_HOME`.
 
-## 15. Known limitations
+## Known limitations
 
-* Open-loop sources and one bottleneck: no TCP congestion control, retransmissions, RTT or multi-hop behaviour; results do not
-  predict real TCP throughput.
+* **Predictions assume open-loop traffic** (sources do not slow down on loss, like UDP/video/many users). Real TCP backs off, so its loss is lower and its
+  throughput closer to capacity. One bottleneck, no RTT/multi-hop modelling. Capacity is measured to a single server in the download direction;
+  buffer size is inferred from latency growth; ICMP loss differs from what applications see ([docs/my-network.md](docs/my-network.md)).
 * RED/CoDel unvalidated against reference implementations; drop-only (no ECN); fixed packet size.
-* Not implemented: stored packet traces, PIE/FQ-CoDel (the registry is designed for them).
-* `bufferlab measure` (iperf3) is tested against parsed iperf3 JSON and a stand-in executable only; no live iperf3 server run was made.
-* Local tests ran on macOS only. The GitHub Actions workflow runs the suite and the launcher on Ubuntu, macOS and Windows; see the badge/Actions tab for the actual status.
+* Not implemented: upload-direction measurement, stored packet traces, PIE/FQ-CoDel.
+* Everything was tested on macOS only (no CI is shipped). Linux/Windows are expected to work (stdlib + system `ping` with per-OS flags) but are unverified; the Windows launcher/installer have never been run.
 * The TUI was exercised through headless pilot tests, SVG screenshots and a pty launch on macOS; it has not been checked in
   other terminal emulators.
 * Python-speed ceiling: roughly 300k events/s; the 1 Gbps scenario (~800k events) takes a few seconds.
 
-## 16. Troubleshooting
+## Troubleshooting
 
 See [docs/troubleshooting.md](docs/troubleshooting.md).
 
-## 17. Contributing
+## Contributing
 
 1. `pip install -e ".[dev]"`; run `pytest` and `ruff check .` before opening a PR.
 2. Keep simulation/algorithm logic out of `tui/`, and every displayed number traceable to a simulation or documented formula.

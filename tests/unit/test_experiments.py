@@ -4,9 +4,8 @@ import json
 import pytest
 
 from bufferlab.analysis.comparison import comparison_rows, observations, sort_rows
-from bufferlab.analysis.reporting import FORMATS, batch_report, export_batch, export_runs
-from bufferlab.analysis.statistics import summarize, t_critical_975
-from bufferlab.experiments.batch import BatchSpec, research_matrix, run_batch
+from bufferlab.analysis.reporting import FORMATS, export_runs
+from bufferlab.experiments.batch import BatchSpec, run_batch
 from bufferlab.experiments.models import ExperimentConfig
 from bufferlab.experiments.runner import run_experiment
 from bufferlab.experiments.scenarios import SCENARIOS, get_scenario, scenario_config
@@ -90,18 +89,6 @@ def test_same_scenario_different_algorithms_actually_differ():
     assert a["dropped_aqm"] == 0 and b["dropped_aqm"] > 0
 
 
-# ---- statistics ----
-def test_summarize():
-    s = summarize([1.0, 2.0, 3.0, 4.0, 5.0])
-    assert s.n == 5 and s.mean == 3.0
-    assert s.sd == pytest.approx(1.5811388)
-    assert s.half_width == pytest.approx(2.776 * 1.5811388 / 5**0.5, rel=1e-4)
-    assert summarize([2.0]).sd is None and summarize([2.0]).ci_low is None
-    assert summarize([None, None]).n == 0
-    assert summarize([1.0, None, 3.0]).n == 2
-    assert t_critical_975(1000) == 1.96
-
-
 # ---- batch ----
 def test_batch_expand_and_dedupe_params():
     spec = BatchSpec(
@@ -113,20 +100,6 @@ def test_batch_expand_and_dedupe_params():
     assert spec.total_runs() == 6
 
 
-def test_batch_runs_replications_with_distinct_seeds_and_crn():
-    spec = BatchSpec("b", quick(), {"algorithm": ["drop-tail", "codel"]}, 3, base_seed=10)
-    res = run_batch(spec)
-    assert len(res.runs) == 6
-    for p in res.points:
-        assert [r.config.seed for r in p.runs] == [10, 11, 12]
-        assert len({r.run_id for r in p.runs}) == 3
-    # same replication index => same traffic => same arrivals across algorithms
-    a, b = res.points
-    assert a.runs[0].metrics["arrivals_total"] == b.runs[0].metrics["arrivals_total"]
-    summ = a.summary()["throughput_mbps"]
-    assert summ.n == 3 and summ.ci_low is not None
-
-
 def test_batch_cancel_and_validation():
     import threading
 
@@ -136,13 +109,6 @@ def test_batch_cancel_and_validation():
     assert res.cancelled and res.runs == []
     with pytest.raises(ValueError):
         run_batch(BatchSpec("b", quick(), {"queue_capacity": []}, 1))
-
-
-def test_research_matrix_shape():
-    spec = research_matrix(quick(), replications=2)
-    assert spec.factors["offered_load_pct"] == [50.0, 75.0, 100.0, 125.0, 150.0]
-    assert len(spec.points()) == 3 * 5 * 3
-    assert spec.total_runs() == 90
 
 
 # ---- storage ----
@@ -178,22 +144,6 @@ def test_results_persist_across_restart(tmp_path):
     assert again.get_run(r.run_id).metrics == r.metrics
 
 
-def test_batches_and_saved_configs(tmp_path):
-    repo = Repository(tmp_path / "t.sqlite3")
-    spec = BatchSpec("sweep", quick(), {"queue_capacity": [5, 20]}, 2)
-    res = run_batch(spec)
-    for r in res.runs:
-        repo.save_run(r)
-    repo.save_batch(res.batch_id, spec)
-    spec2, runs = repo.get_batch(res.batch_id)
-    assert spec2.to_dict() == spec.to_dict() and len(runs) == 4
-    assert repo.list_batches()[0]["n_runs"] == 4
-    repo.save_config("mine", "experiment", quick().to_dict())
-    assert ExperimentConfig.from_dict(repo.list_configs("experiment")["mine"]) == quick()
-    repo.delete_config("mine", "experiment")
-    assert repo.list_configs("experiment") == {}
-
-
 # ---- comparison + export ----
 def three_runs():
     return [
@@ -206,10 +156,10 @@ def test_comparison_and_observations():
     runs = three_runs()
     rows = comparison_rows(runs)
     assert [r["tag"] for r in rows] == ["A", "B", "C"]
-    s = sort_rows(rows, "p95_queue_delay_ms")
-    assert s[0]["p95_queue_delay_ms"] <= s[-1]["p95_queue_delay_ms"]
+    s = sort_rows(rows, "loss_rate")
+    assert s[0]["loss_rate"] <= s[-1]["loss_rate"]
     obs = observations(runs)
-    assert any("queueing delay" in o and "under the tested configuration" in o for o in obs)
+    assert any("packet-loss rate" in o and "under the tested configuration" in o for o in obs)
     assert not any("always" in o.lower() for o in obs)
     assert observations(runs[:1]) == ["Select at least two runs to compare."]
 
@@ -247,29 +197,3 @@ def test_export_errors(tmp_path):
         export_runs([], "csv", tmp_path / "x.csv")
     with pytest.raises(ValueError):
         export_runs(three_runs()[:1], "xml", tmp_path / "x.xml")
-
-
-def test_batch_report_contents(tmp_path):
-    spec = BatchSpec(
-        "study",
-        quick(),
-        {"algorithm": ["drop-tail", "codel"], "offered_load_pct": [80.0, 140.0]},
-        3,
-        objective="Does AQM reduce delay?",
-    )
-    res = run_batch(spec)
-    md = batch_report(spec, res.runs).to_markdown()
-    for needle in (
-        "Objective",
-        "Does AQM reduce delay?",
-        "Methodology",
-        "Results",
-        "±",
-        "Limitations",
-        "Questions for further investigation",
-        "automated interpretation".capitalize(),
-    ):
-        assert needle in md or needle.lower() in md.lower()
-    p = export_batch(spec, res.runs, "csv", tmp_path / "b.csv")
-    assert len(p.read_text().splitlines()) == 1 + 12
-    assert "common random numbers" in md

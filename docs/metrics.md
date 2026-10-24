@@ -42,7 +42,3 @@ was delivered. They are never reported as 0.
 length, mean queueing delay of departures, link utilisation, drop counts and arrival counts per bin. Live
 (in-progress) summary values are marked `approximate`; percentiles then use the most recent 20,000 delivered packets.
 
-## Replications
-
-For `n` replications of one point: sample mean, sample standard deviation (n−1), and a 95% Student-t interval
-`mean ± t(0.975,n−1)·s/√n`. This describes variation across seeds; it is not a hypothesis test.

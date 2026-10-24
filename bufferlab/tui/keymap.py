@@ -20,10 +20,9 @@ NAV: tuple[Nav, ...] = (
     Nav("f4", "compare", "Compare"),
     Nav("f5", "history", "History"),
     Nav("f6", "export", "Export"),
-    Nav("f7", "scenarios", "Scenarios", False),
-    Nav("f8", "lab", "Algo Lab", False),
+    Nav("f7", "scenarios", "Scenarios"),
+    Nav("f8", "network", "My Network"),
     Nav("f9", "results", "Results", False),
-    Nav("f10", "research", "Research", False),
     Nav("ctrl+t", "settings", "Settings", False),
 )
 

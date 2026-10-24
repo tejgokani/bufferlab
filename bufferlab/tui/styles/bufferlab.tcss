@@ -22,3 +22,8 @@ Button { margin: 0 1 0 0; min-width: 12; }
 ModalScreen { align: center middle; }
 .dialog { width: 64; max-width: 95%; height: auto; max-height: 90%; border: thick $accent; background: $panel; padding: 1 2; }
 .dialog-buttons { height: 3; margin-top: 1; align-horizontal: right; }
+#net-top { height: auto; }
+#net-top > Vertical { height: auto; }
+#net-results { height: 1fr; min-height: 10; }
+#net-results DataTable { height: 1fr; }
+#summary { height: auto; }
