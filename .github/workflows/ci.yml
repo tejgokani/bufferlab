@@ -32,7 +32,7 @@ jobs:
         run: |
           bin/bufferlab --version
           bin/bufferlab scenarios | head -3
-          mkdir -p /tmp/shadow/bufferlab && cd /tmp/shadow && "$GITHUB_WORKSPACE/bin/bufferlab" --version
+          (mkdir -p /tmp/shadow/bufferlab && cd /tmp/shadow && "$GITHUB_WORKSPACE/bin/bufferlab" --version)
           test -x .venv/bin/python
       - name: First run builds .venv, second run reuses it (Windows)
         if: runner.os == 'Windows'

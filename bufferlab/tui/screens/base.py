@@ -36,8 +36,13 @@ class LabScreen(Screen):
                 t.append(f" {label} ", style="dim")
         return t
 
-    def on_mount(self) -> None:
+    def __init__(self) -> None:
+        super().__init__()
+        # Set before the Header exists: changing it after mount races with Header composition.
         self.sub_title = self.TITLE_TEXT
+
+    def on_mount(self) -> None:  # kept so subclasses can call super().on_mount()
+        pass
 
     @property
     def lab(self):  # the BufferLabApp
