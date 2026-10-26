@@ -94,7 +94,7 @@ def observations(runs: list[RunRecord], rel_tol: float = 0.02) -> list[str]:
         out.append(
             "Each figure comes from a single run per entry"
             + (" (same seed)." if len(seeds) == 1 else " (different seeds).")
-            + " Use repeated runs (batch mode) to judge sensitivity to random variation."
+            + " Repeat with different seeds to judge sensitivity to random variation."
         )
     names = {i: run_name(r, i) for i, r in enumerate(runs)}
     for key, phrase in (
